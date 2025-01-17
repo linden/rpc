@@ -192,7 +192,7 @@ func (call *Call) done() {
 // concurrent reads or concurrent writes.
 func NewClient(conn io.ReadWriteCloser) *Client {
 	encBuf := bufio.NewWriter(conn)
-	client := &gobClientCodec{conn, gob.NewDecoder(conn), gob.NewEncoder(encBuf), encBuf}
+	client := &GobClientCodec{conn, gob.NewDecoder(conn), gob.NewEncoder(encBuf), encBuf}
 	return NewClientWithCodec(client)
 }
 
@@ -207,14 +207,28 @@ func NewClientWithCodec(codec ClientCodec) *Client {
 	return client
 }
 
-type gobClientCodec struct {
+type GobClientCodec struct {
 	rwc    io.ReadWriteCloser
 	dec    *gob.Decoder
 	enc    *gob.Encoder
 	encBuf *bufio.Writer
 }
 
-func (c *gobClientCodec) WriteRequest(r *Request, body any) (err error) {
+func NewGobClientCodec(r io.Reader, w io.Writer) *GobClientCodec {
+	var bw *bufio.Writer
+
+	if w != nil {
+		bw = bufio.NewWriter(w)
+	}
+
+	return &GobClientCodec{
+		dec:    gob.NewDecoder(r),
+		enc:    gob.NewEncoder(bw),
+		encBuf: bw,
+	}
+}
+
+func (c *GobClientCodec) WriteRequest(r *Request, body any) (err error) {
 	if err = c.enc.Encode(r); err != nil {
 		return
 	}
@@ -224,15 +238,15 @@ func (c *gobClientCodec) WriteRequest(r *Request, body any) (err error) {
 	return c.encBuf.Flush()
 }
 
-func (c *gobClientCodec) ReadResponseHeader(r *Response) error {
+func (c *GobClientCodec) ReadResponseHeader(r *Response) error {
 	return c.dec.Decode(r)
 }
 
-func (c *gobClientCodec) ReadResponseBody(body any) error {
+func (c *GobClientCodec) ReadResponseBody(body any) error {
 	return c.dec.Decode(body)
 }
 
-func (c *gobClientCodec) Close() error {
+func (c *GobClientCodec) Close() error {
 	return c.rwc.Close()
 }
 

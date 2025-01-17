@@ -389,7 +389,7 @@ func (s *service) call(server *Server, sending *sync.Mutex, wg *sync.WaitGroup, 
 	server.freeRequest(req)
 }
 
-type gobServerCodec struct {
+type GobServerCodec struct {
 	rwc    io.ReadWriteCloser
 	dec    *gob.Decoder
 	enc    *gob.Encoder
@@ -397,15 +397,27 @@ type gobServerCodec struct {
 	closed bool
 }
 
-func (c *gobServerCodec) ReadRequestHeader(r *Request) error {
+func NewGobServerCodec(r io.Reader, w io.Writer) *GobServerCodec {
+	bw := bufio.NewWriter(w)
+
+	return &GobServerCodec{
+		dec:    gob.NewDecoder(r),
+		enc:    gob.NewEncoder(bw),
+		encBuf: bw,
+
+		closed: true,
+	}
+}
+
+func (c *GobServerCodec) ReadRequestHeader(r *Request) error {
 	return c.dec.Decode(r)
 }
 
-func (c *gobServerCodec) ReadRequestBody(body any) error {
+func (c *GobServerCodec) ReadRequestBody(body any) error {
 	return c.dec.Decode(body)
 }
 
-func (c *gobServerCodec) WriteResponse(r *Response, body any) (err error) {
+func (c *GobServerCodec) WriteResponse(r *Response, body any) (err error) {
 	if err = c.enc.Encode(r); err != nil {
 		if c.encBuf.Flush() == nil {
 			// Gob couldn't encode the header. Should not happen, so if it does,
@@ -427,7 +439,7 @@ func (c *gobServerCodec) WriteResponse(r *Response, body any) (err error) {
 	return c.encBuf.Flush()
 }
 
-func (c *gobServerCodec) Close() error {
+func (c *GobServerCodec) Close() error {
 	if c.closed {
 		// Only call c.rwc.Close once; otherwise the semantics are undefined.
 		return nil
@@ -444,7 +456,7 @@ func (c *gobServerCodec) Close() error {
 // See [NewClient]'s comment for information about concurrent access.
 func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 	buf := bufio.NewWriter(conn)
-	srv := &gobServerCodec{
+	srv := &GobServerCodec{
 		rwc:    conn,
 		dec:    gob.NewDecoder(conn),
 		enc:    gob.NewEncoder(buf),
